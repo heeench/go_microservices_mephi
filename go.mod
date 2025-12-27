@@ -3,7 +3,8 @@ module go-microservice
 go 1.22
 
 require (
-	github.com/gorilla/mux v1.8.1
+	github.com/json-iterator/go v1.1.12
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/minio/minio-go/v7 v7.0.69
 	github.com/prometheus/client_golang v1.19.1
 	golang.org/x/time v0.5.0
@@ -14,7 +15,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect

@@ -6,13 +6,15 @@ import (
 )
 
 // AuditLogger writes audit events asynchronously.
+// Оптимизировано: убрано Lshortfile для повышения производительности
 type AuditLogger struct {
 	logger *log.Logger
 }
 
 func NewAuditLogger() AuditLogger {
 	return AuditLogger{
-		logger: log.New(os.Stdout, "[audit] ", log.LstdFlags|log.Lshortfile),
+		// Убираем Lshortfile для повышения производительности
+		logger: log.New(os.Stdout, "[audit] ", log.LstdFlags),
 	}
 }
 
@@ -21,13 +23,15 @@ func (l AuditLogger) Log(action string, userID int) {
 }
 
 // Notifier simulates an async notifier.
+// Оптимизировано: убрано Lshortfile для повышения производительности
 type Notifier struct {
 	logger *log.Logger
 }
 
 func NewNotifier() Notifier {
 	return Notifier{
-		logger: log.New(os.Stdout, "[notify] ", log.LstdFlags|log.Lshortfile),
+		// Убираем Lshortfile для повышения производительности
+		logger: log.New(os.Stdout, "[notify] ", log.LstdFlags),
 	}
 }
 

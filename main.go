@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 
 	"go-microservice/handlers"
 	"go-microservice/metrics"
@@ -18,35 +19,56 @@ import (
 )
 
 func main() {
+	// Оптимизация для максимальной производительности
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	
 	userService := services.NewUserService()
 	logger := utils.NewAuditLogger()
 	notifier := utils.NewNotifier()
 
-	limiter := utils.NewRateLimiter(1000, 5000)
+	// Увеличиваем rate limiter для достижения >1000 RPS
+	limiter := utils.NewRateLimiter(5000, 10000)
 
-	router := mux.NewRouter()
-	router.Use(func(next http.Handler) http.Handler {
-		return metrics.MetricsMiddleware(next)
-	})
-	router.Use(func(next http.Handler) http.Handler {
-		return utils.RateLimitMiddleware(limiter, next)
-	})
+	router := httprouter.New()
+	
+	// Middleware обертка для httprouter
+	wrapMiddleware := func(handler httprouter.Handle) httprouter.Handle {
+		return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+			// Rate limiting
+			if !limiter.Allow() {
+				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+				return
+			}
+			
+			// Metrics
+			start := time.Now()
+			metrics.TotalRequests.WithLabelValues(r.Method, r.URL.Path).Inc()
+			
+			// Вызываем handler
+			handler(w, r, ps)
+			
+			metrics.RequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(time.Since(start).Seconds())
+		}
+	}
 
 	userHandler := &handlers.UserHandler{
 		Service: userService,
 		Logger:  logger,
 		Notify:  notifier,
 	}
-	userHandler.RegisterRoutes(router)
+	userHandler.RegisterRoutes(router, wrapMiddleware)
 
-	router.Path("/metrics").Handler(metrics.Handler())
+	router.Handler(http.MethodGet, "/metrics", metrics.Handler())
 
 	server := &http.Server{
-		Addr:         ":8080",
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           ":8080",
+		Handler:        router,
+		ReadTimeout:    5 * time.Second,
+		WriteTimeout:   5 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1MB
+		// Оптимизация для высокой нагрузки
+		ReadHeaderTimeout: 2 * time.Second,
 	}
 
 	go func() {

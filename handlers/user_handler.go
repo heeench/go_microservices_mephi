@@ -1,11 +1,10 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 
 	"go-microservice/models"
 	"go-microservice/services"
@@ -19,21 +18,25 @@ type UserHandler struct {
 	Notify  utils.Notifier
 }
 
-func (h *UserHandler) RegisterRoutes(r *mux.Router) {
-	r.HandleFunc("/api/users", h.GetAll).Methods(http.MethodGet)
-	r.HandleFunc("/api/users/{id}", h.GetByID).Methods(http.MethodGet)
-	r.HandleFunc("/api/users", h.Create).Methods(http.MethodPost)
-	r.HandleFunc("/api/users/{id}", h.Update).Methods(http.MethodPut)
-	r.HandleFunc("/api/users/{id}", h.Delete).Methods(http.MethodDelete)
+// MiddlewareWrapper обертка для middleware
+type MiddlewareWrapper func(handler httprouter.Handle) httprouter.Handle
+
+func (h *UserHandler) RegisterRoutes(r *httprouter.Router, mw MiddlewareWrapper) {
+	// Регистрируем с middleware
+	r.GET("/api/users", mw(h.GetAll))
+	r.GET("/api/users/:id", mw(h.GetByID))
+	r.POST("/api/users", mw(h.Create))
+	r.PUT("/api/users/:id", mw(h.Update))
+	r.DELETE("/api/users/:id", mw(h.Delete))
 }
 
-func (h *UserHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) GetAll(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	users := h.Service.GetAll()
-	writeJSON(w, http.StatusOK, users)
+	utils.WriteJSON(w, http.StatusOK, users)
 }
 
-func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(mux.Vars(r)["id"])
+func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	id, err := parseID(ps.ByName("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -44,31 +47,32 @@ func (h *UserHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, user)
+	utils.WriteJSON(w, http.StatusOK, user)
 }
 
-func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	var user models.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	if err := utils.DecodeJSON(r, &user); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	created := h.Service.Create(user)
+	// Асинхронное логирование и нотификация не блокируют ответ
 	go h.Logger.Log("CREATE", created.ID)
 	go h.Notify.Send(created.ID, "created")
-	writeJSON(w, http.StatusCreated, created)
+	utils.WriteJSON(w, http.StatusCreated, created)
 }
 
-func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(mux.Vars(r)["id"])
+func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	id, err := parseID(ps.ByName("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var payload models.User
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := utils.DecodeJSON(r, &payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -80,11 +84,11 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	go h.Logger.Log("UPDATE", id)
 	go h.Notify.Send(id, "updated")
-	writeJSON(w, http.StatusOK, updated)
+	utils.WriteJSON(w, http.StatusOK, updated)
 }
 
-func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(mux.Vars(r)["id"])
+func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	id, err := parseID(ps.ByName("id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -101,10 +105,4 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func parseID(raw string) (int, error) {
 	return strconv.Atoi(raw)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

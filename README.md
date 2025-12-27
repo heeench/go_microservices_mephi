@@ -223,4 +223,4 @@ MIT
 
 ## 👥 Авторы
 
-MEPHI Go Microservices Team
+Kopeyka David
